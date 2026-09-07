@@ -2,13 +2,132 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Medora Western Visayas</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b3d3a" />
+  <meta name="description" content="Medora — Philippine Health Directory. Western Visayas Region 6. Free. Bin/." />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>Medora · Western Visayas</title>
+  <style>
+    :root { --ink:#132524; --soft:#3a4f4d; --paper:#f3f7f4; --teal:#0b3d3a; --mid:#1a6b64; --line:rgba(19,37,36,.12); --ok:#2f5a3d; }
+    *{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:var(--paper);color:var(--ink);line-height:1.45}
+    .wrap{width:min(100% - 1.5rem,720px);margin:0 auto;padding:1.5rem 0 3rem}
+    .imprint{font-size:.8rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--mid);margin:0}
+    h1{margin:.2rem 0 0;font-size:clamp(2.2rem,9vw,3.4rem);color:var(--teal);letter-spacing:-.02em}
+    .tag{margin:.35rem 0 0;font-weight:600}.region,.lede,.status{color:var(--soft);font-size:.95rem}
+    input[type=search]{width:100%;padding:.9rem 1.1rem;border:1px solid var(--line);border-radius:999px;font:inherit;margin:1rem 0 .75rem}
+    .chips{display:flex;flex-wrap:wrap;gap:.4rem;margin:.4rem 0 1rem}
+    .chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:.4rem .8rem;font:inherit;font-weight:600;cursor:pointer}
+    .chip[aria-pressed=true]{background:var(--teal);color:#f7fffe;border-color:var(--teal)}
+    .card{padding:1rem 0;border-bottom:1px solid var(--line)}
+    .card h2{margin:0;font-size:1.15rem;color:var(--teal)}
+    .meta{margin:.25rem 0;color:var(--soft);font-size:.92rem}
+    .row{display:flex;flex-wrap:wrap;gap:.35rem;margin:.45rem 0}
+    .pill{font-size:.72rem;font-weight:700;letter-spacing:.03em;text-transform:uppercase;padding:.15rem .5rem;border-radius:999px;background:rgba(11,61,58,.08);color:var(--mid)}
+    .pill.ok{background:rgba(63,107,79,.14);color:var(--ok);border:1px solid rgba(63,107,79,.25)}
+    .cite a{color:var(--mid);font-weight:600}
+    footer{margin-top:2rem;padding-top:1rem;border-top:1px solid var(--line);color:var(--soft);font-size:.88rem}
+    .empty{padding:1.2rem;border:1px dashed rgba(11,61,58,.28);border-radius:14px}
+  </style>
 </head>
 <body>
-  <main>
-    <h1>Medora Western Visayas</h1>
-    <p>Philippine Health Directory for Western Visayas (Region 6). Placeholder site.</p>
-  </main>
+  <div class="wrap">
+    <p class="imprint">Bin/</p>
+    <h1>Medora</h1>
+    <p class="tag">Philippine Health Directory</p>
+    <p class="region">Western Visayas · Region 6</p>
+    <p class="lede">Licensed facilities from DOH RLED lists. Free directory — not medical advice. Confirm with the facility or DOH.</p>
+    <p class="status" id="chrome">Loading…</p>
+    <input id="q" type="search" placeholder="Search by name, city…" enterkeyhint="search" autocomplete="off" />
+    <div class="chips" id="provinces"></div>
+    <div class="chips" id="types"></div>
+    <div id="list"></div>
+    <div class="empty" id="empty" hidden></div>
+    <footer>
+      <p><strong>Verified by RLED</strong> means on the DOH RLED licensed-facility list as of that date — not a PRC person license or independent clinic audit.</p>
+      <p>Information as-is. As-of 2025-12-31 · Last checked 2026-09-06.</p>
+      <p>Bin/</p>
+    </footer>
+  </div>
+<script>
+(() => {
+  const PROVINCES = ["All","Aklan","Antique","Capiz","Guimaras","Iloilo","Neg. Occ"];
+  const state = { facilities: [], q: "", province: "All", type: "All", types: ["All"] };
+  const els = {
+    q: document.getElementById("q"),
+    provinces: document.getElementById("provinces"),
+    types: document.getElementById("types"),
+    list: document.getElementById("list"),
+    empty: document.getElementById("empty"),
+    chrome: document.getElementById("chrome"),
+  };
+  function norm(s) {
+    return String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+  }
+  function escapeHtml(s) {
+    return String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
+  }
+  function chips(container, items, selected, onPick) {
+    container.innerHTML = "";
+    items.forEach(item => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "chip"; b.textContent = item;
+      b.setAttribute("aria-pressed", selected === item ? "true" : "false");
+      b.onclick = () => onPick(item);
+      container.appendChild(b);
+    });
+  }
+  function filtered() {
+    const tokens = norm(state.q).split(" ").filter(Boolean);
+    return state.facilities.filter(f => {
+      if (state.province !== "All" && f.province !== state.province) return false;
+      if (state.type !== "All" && (f.facilityClass || f.type) !== state.type) return false;
+      if (!tokens.length) return true;
+      const hay = norm([f.name, f.city, f.province, f.address, f.facilityClass].join(" "));
+      return tokens.every(t => hay.includes(t));
+    });
+  }
+  function render() {
+    const rows = filtered();
+    const total = state.facilities.length;
+    els.chrome.textContent = rows.length + " shown · " + total + " licensed facilities · As-of 2025-12-31 · Last checked 2026-09-06";
+    if (!rows.length) {
+      els.list.innerHTML = "";
+      els.empty.hidden = false;
+      els.empty.textContent = "No matches. Try another name or clear filters.";
+      return;
+    }
+    els.empty.hidden = true;
+    els.list.innerHTML = rows.map(f => {
+      const loc = [f.city, f.province].filter(Boolean).join(" · ");
+      const type = f.facilityClass || f.type || "";
+      const src = f.sourceUrl || "https://rledwesternvisayas.com/rled-list.php";
+      const label = f.sourceLabel || "DOH RLED Western Visayas";
+      return "<article class=\"card\"><h2>" + escapeHtml(f.name) + "</h2><p class=\"meta\">" + escapeHtml(loc) + "</p><div class=\"row\">" +
+        (type ? "<span class=\"pill\">" + escapeHtml(type) + "</span>" : "") +
+        "<span class=\"pill\">As-of " + escapeHtml(f.asOf || "2025-12-31") + "</span>" +
+        "<span class=\"pill ok\">Verified by RLED</span></div>" +
+        (f.address ? "<p class=\"meta\">" + escapeHtml(f.address) + "</p>" : "") +
+        "<p class=\"cite meta\">Source: <a href=\"" + escapeHtml(src) + "\" rel=\"noopener noreferrer\" target=\"_blank\">" + escapeHtml(label) + "</a></p></article>";
+    }).join("");
+  }
+  function wire() {
+    chips(els.provinces, PROVINCES, state.province, id => { state.province = id; wire(); render(); });
+    chips(els.types, state.types, state.type, id => { state.type = id; wire(); render(); });
+    els.q.oninput = () => { state.q = els.q.value; render(); };
+  }
+  Promise.all([0,1,2,3].map(i => fetch("part-" + i + ".json", { cache: "no-store" }).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })))
+    .then(parts => {
+      state.facilities = parts.flat();
+      const set = new Set(state.facilities.map(f => f.facilityClass || f.type).filter(Boolean));
+      state.types = ["All", ...Array.from(set).sort()];
+      wire(); render();
+    })
+    .catch(err => {
+      els.chrome.textContent = "Could not load directory";
+      els.empty.hidden = false;
+      els.empty.textContent = String(err && err.message || err);
+    });
+})();
+</script>
 </body>
 </html>
